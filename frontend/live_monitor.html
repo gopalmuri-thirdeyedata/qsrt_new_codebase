@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KitchEye — Control Centre</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --void:#06080B;--base:#0B0E14;--surface:#101520;--card:#141B27;--card2:#1A2235;
+  --border:#1E2D45;--border2:#273D5E;
+  --text:#DFE8F5;--muted:#5C7A9E;--dim:#8BA3C4;
+  --green:#00E5A0;--green2:#00B87D;--green-bg:rgba(0,229,160,.08);--green-glow:rgba(0,229,160,.2);
+  --amber:#F5A623;--amber-bg:rgba(245,166,35,.08);
+  --red:#FF3D5A;--red-bg:rgba(255,61,90,.08);--red-glow:rgba(255,61,90,.2);
+  --blue:#4D9FFF;--blue-bg:rgba(77,159,255,.08);
+  --purple:#9B7FFF;
+  --font-display:'Syne',sans-serif;
+  --font-serif:'Instrument Serif',serif;
+  --font-mono:'DM Mono',monospace;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font-display);background:var(--void);color:var(--text);font-size:13px;display:flex;flex-direction:column}
+
+/* ── Scanline ── */
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.02) 3px,rgba(0,0,0,.02) 4px);pointer-events:none;z-index:9998}
+
+/* ── Header ── */
+.header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:.75rem 1.5rem;
+  background:var(--base);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.brand{display:flex;align-items:center;gap:.875rem}
+.brand-mark{
+  width:38px;height:38px;border-radius:8px;
+  background:linear-gradient(135deg,var(--green),var(--green2));
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;flex-shrink:0;
+}
+.brand-text .name{font-family:var(--font-display);font-weight:800;font-size:18px;letter-spacing:.08em;color:var(--text)}
+.brand-text .tagline{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;margin-top:1px}
+.header-center{
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;
+  color:var(--muted);text-align:center;
+}
+.header-center span{color:var(--green);font-weight:500}
+.header-right{display:flex;align-items:center;gap:.75rem}
+.sys-time{font-family:var(--font-mono);font-size:20px;font-weight:500;color:var(--text);letter-spacing:.06em}
+.sys-date{font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:.06em;margin-top:1px;text-align:right}
+
+/* ── Layout ── */
+.body{display:flex;flex:1;min-height:0;gap:0}
+.left-col{width:320px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--base);overflow-y:auto}
+.left-col::-webkit-scrollbar{width:3px}.left-col::-webkit-scrollbar-thumb{background:var(--border2)}
+.main-col{flex:1;display:flex;flex-direction:column;min-width:0;overflow-y:auto}
+.main-col::-webkit-scrollbar{width:3px}.main-col::-webkit-scrollbar-thumb{background:var(--border2)}
+
+/* ── Section labels ── */
+.section-hdr{
+  padding:.625rem 1.25rem;
+  font-family:var(--font-mono);font-size:9px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+  background:var(--base);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+}
+
+/* ── Service cards ── */
+.service-card{
+  padding:1rem 1.25rem;
+  border-bottom:1px solid var(--border);
+  transition:background .15s;
+}
+.service-card:hover{background:rgba(255,255,255,.015)}
+.svc-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.75rem}
+.svc-left{display:flex;align-items:center;gap:.75rem}
+.svc-icon{
+  width:36px;height:36px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;flex-shrink:0;
+  border:1px solid var(--border);
+}
+.svc-name{font-size:14px;font-weight:600;color:var(--text)}
+.svc-desc{font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:2px;line-height:1.4}
+.svc-status{
+  display:flex;align-items:center;gap:6px;
+  font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;
+  font-weight:500;white-space:nowrap;
+}
+.status-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+
+/* Status colours */
+.s-stopped .status-dot{background:var(--muted)}
+.s-stopped .svc-status{color:var(--muted)}
+.s-starting .status-dot{background:var(--amber);animation:blink .7s infinite}
+.s-starting .svc-status{color:var(--amber)}
+.s-running .status-dot{background:var(--green);box-shadow:0 0 6px var(--green-glow)}
+.s-running .svc-status{color:var(--green)}
+.s-stopping .status-dot{background:var(--amber);animation:blink .7s infinite}
+.s-stopping .svc-status{color:var(--amber)}
+.s-error .status-dot{background:var(--red);box-shadow:0 0 6px var(--red-glow)}
+.s-error .svc-status{color:var(--red)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── Control buttons ── */
+.svc-btn-row{display:flex;gap:.5rem}
+.svc-btn{
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;
+  padding:6px 14px;border-radius:5px;cursor:pointer;
+  border:1px solid var(--border);background:transparent;
+  color:var(--muted);transition:all .2s;
+  display:flex;align-items:center;gap:5px;
+}
+.svc-btn:hover:not(:disabled){border-color:var(--border2);color:var(--text)}
+.svc-btn:disabled{opacity:.3;cursor:not-allowed}
+.svc-btn.start{border-color:var(--green2);color:var(--green)}
+.svc-btn.start:hover:not(:disabled){background:var(--green-bg)}
+.svc-btn.stop{border-color:rgba(255,61,90,.4);color:var(--red)}
+.svc-btn.stop:hover:not(:disabled){background:var(--red-bg)}
+
+/* ── Service metrics ── */
+.svc-metrics{
+  display:flex;gap:.75rem;margin-top:.75rem;padding-top:.75rem;
+  border-top:1px solid var(--border);
+}
+.svc-metric{font-family:var(--font-mono);font-size:10px}
+.svc-metric .label{color:var(--muted)}
+.svc-metric .val{color:var(--text);font-weight:500}
+
+/* ── Log panel ── */
+.log-panel{flex:1;padding:0;overflow:hidden;display:flex;flex-direction:column}
+.log-body{flex:1;overflow-y:auto;padding:.5rem 0;font-family:var(--font-mono);font-size:11px;line-height:1.6}
+.log-body::-webkit-scrollbar{width:3px}.log-body::-webkit-scrollbar-thumb{background:var(--border2)}
+.log-entry{padding:2px 1.25rem;display:flex;align-items:baseline;gap:.5rem;animation:logIn .2s ease}
+@keyframes logIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.log-ts{color:var(--muted);flex-shrink:0;font-size:10px}
+.log-svc{width:60px;flex-shrink:0;font-weight:500}
+.log-svc.cam{color:var(--purple)}
+.log-svc.relay{color:var(--blue)}
+.log-svc.server{color:var(--amber)}
+.log-svc.qb{color:var(--green)}
+.log-svc.system{color:var(--muted)}
+.log-msg{color:var(--dim);flex:1}
+.log-msg.ok{color:var(--green)}
+.log-msg.err{color:var(--red)}
+.log-msg.warn{color:var(--amber)}
+
+/* ── Camera grid ── */
+.cam-section{padding:1rem 1.25rem;flex-shrink:0}
+.cam-grid-title{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:.75rem}
+.cam-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+.cam-card{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:8px;overflow:hidden;
+  transition:border-color .25s,box-shadow .3s;
+}
+.cam-card.cam-ok{border-color:var(--green);box-shadow:0 0 14px var(--green-glow)}
+.cam-card.cam-alert{border-color:var(--red);box-shadow:0 0 18px var(--red-glow);animation:alertPulse 1s ease-in-out infinite}
+@keyframes alertPulse{0%,100%{box-shadow:0 0 18px var(--red-glow)}50%{box-shadow:0 0 34px rgba(255,61,90,.5)}}
+.cam-head{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:var(--surface);border-bottom:1px solid var(--border)}
+.cam-id{font-family:var(--font-mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.cam-pill{font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;padding:1px 7px;border-radius:3px;text-transform:uppercase;font-weight:500}
+.cp-idle{background:rgba(92,122,158,.1);color:var(--muted);border:1px solid var(--border)}
+.cp-live{background:var(--green-bg);color:var(--green);border:1px solid rgba(0,229,160,.3)}
+.cp-alert{background:var(--red-bg);color:var(--red);border:1px solid rgba(255,61,90,.3)}
+.cp-wait{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(77,159,255,.3)}
+.cam-viewport{position:relative;aspect-ratio:16/9;background:#040608;overflow:hidden}
+.cam-canvas{width:100%;height:100%;display:block;object-fit:contain}
+.cam-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+.cam-overlay svg{opacity:.15;width:28px;height:28px}
+.cam-overlay span{font-family:var(--font-mono);font-size:9px;color:var(--muted);letter-spacing:.08em;opacity:.6}
+.cam-ts{position:absolute;bottom:4px;right:6px;font-family:var(--font-mono);font-size:8px;color:rgba(255,255,255,.3)}
+.cam-footer{padding:5px 9px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-height:28px;background:var(--surface);border-top:1px solid var(--border)}
+.det-chip{font-family:var(--font-mono);font-size:9px;padding:1px 6px;border-radius:2px}
+.dc-ok{background:var(--green-bg);color:var(--green);border:1px solid rgba(0,229,160,.2)}
+.dc-low{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(245,166,35,.2)}
+.no-det{font-family:var(--font-mono);font-size:9px;color:var(--muted);opacity:.6}
+
+/* ── Qubeyond events panel ── */
+.qb-section{flex-shrink:0;border-top:1px solid var(--border)}
+.qb-events{max-height:180px;overflow-y:auto}
+.qb-events::-webkit-scrollbar{width:3px}.qb-events::-webkit-scrollbar-thumb{background:var(--border2)}
+.qb-row{
+  display:flex;align-items:flex-start;gap:.625rem;
+  padding:.5rem 1.25rem;border-bottom:1px solid rgba(255,255,255,.03);
+  animation:logIn .25s ease;
+}
+.qb-icon{
+  width:24px;height:24px;border-radius:4px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;flex-shrink:0;margin-top:1px;
+}
+.qb-icon.ok{background:var(--green-bg)}
+.qb-icon.bad{background:var(--red-bg)}
+.qb-icon.warn{background:var(--amber-bg)}
+.qb-content{flex:1;min-width:0}
+.qb-title{font-size:12px;font-weight:500;color:var(--text)}
+.qb-meta{font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:2px}
+.qb-time{font-family:var(--font-mono);font-size:10px;color:var(--muted);flex-shrink:0}
+
+/* ── Stats strip ── */
+.stats-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:.5rem;padding:.875rem 1.25rem;flex-shrink:0;border-bottom:1px solid var(--border)}
+.stat-mini{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:.625rem .75rem;text-align:center}
+.stat-mini .v{font-family:var(--font-display);font-size:22px;font-weight:700;line-height:1}
+.stat-mini .l{font-family:var(--font-mono);font-size:9px;color:var(--muted);letter-spacing:.07em;text-transform:uppercase;margin-top:3px}
+
+/* ── Ticker ── */
+.ticker{
+  height:28px;background:var(--surface);border-top:1px solid var(--border);
+  display:flex;align-items:center;gap:.75rem;padding:0 1rem;overflow:hidden;flex-shrink:0;
+}
+.ticker-label{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;color:var(--muted);flex-shrink:0;text-transform:uppercase}
+.ticker-track{flex:1;overflow:hidden;white-space:nowrap}
+.ticker-inner{display:inline-flex;gap:2rem;animation:tickMove 25s linear infinite}
+.ticker-item{font-family:var(--font-mono);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:.375rem}
+.ticker-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+@keyframes tickMove{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+
+/* Scrollbar global */
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header class="header">
+  <div class="brand">
+    <div class="brand-mark">⚡</div>
+    <div class="brand-text">
+      <div class="name">KITCHEYE</div>
+      <div class="tagline">AI Kitchen Intelligence</div>
+    </div>
+  </div>
+  <div class="header-center">
+    System Control Centre &nbsp;·&nbsp; <span id="env-label">LOCAL DEMO</span>
+  </div>
+  <div class="header-right">
+    <div>
+      <div class="sys-time" id="clock">00:00:00</div>
+      <div class="sys-date" id="dateline">—</div>
+    </div>
+  </div>
+</header>
+
+<!-- ── Body ── -->
+<div class="body">
+
+  <!-- ── LEFT: Service controls ── -->
+  <div class="left-col">
+
+    <div class="section-hdr">
+      Services
+      <span id="svc-all-status" style="color:var(--muted)">ALL STOPPED</span>
+    </div>
+
+    <!-- Fake Camera -->
+    <div class="service-card" id="svc-camera">
+      <div class="svc-top">
+        <div class="svc-left">
+          <div class="svc-icon" style="background:rgba(155,127,255,.1);border-color:rgba(155,127,255,.3)">📷</div>
+          <div>
+            <div class="svc-name">Fake Camera</div>
+            <div class="svc-desc">Synthetic MJPEG feed<br>localhost:8554 · 4 stations</div>
+          </div>
+        </div>
+        <div class="svc-status s-stopped" id="cam-status-wrap">
+          <span class="status-dot"></span>
+          <span id="cam-status-text">STOPPED</span>
+        </div>
+      </div>
+      <div class="svc-btn-row">
+        <button class="svc-btn start" id="cam-start-btn" onclick="startService('camera')">▶ Start Camera</button>
+        <button class="svc-btn stop" id="cam-stop-btn" onclick="stopService('camera')" disabled>■ Stop</button>
+      </div>
+      <div class="svc-metrics">
+        <div class="svc-metric"><span class="label">Streams: </span><span class="val" id="cam-streams">4</span></div>
+        <div class="svc-metric"><span class="label">FPS: </span><span class="val" id="cam-fps">—</span></div>
+        <div class="svc-metric"><span class="label">Port: </span><span class="val">8554</span></div>
+      </div>
+    </div>
+
+    <!-- Detection Server -->
+    <div class="service-card" id="svc-server">
+      <div class="svc-top">
+        <div class="svc-left">
+          <div class="svc-icon" style="background:rgba(245,166,35,.1);border-color:rgba(245,166,35,.3)">🧠</div>
+          <div>
+            <div class="svc-name">Detection Server</div>
+            <div class="svc-desc">FastAPI + YOLO inference<br>localhost:8000 · MPS/GPU</div>
+          </div>
+        </div>
+        <div class="svc-status s-stopped" id="srv-status-wrap">
+          <span class="status-dot"></span>
+          <span id="srv-status-text">STOPPED</span>
+        </div>
+      </div>
+      <div class="svc-btn-row">
+        <button class="svc-btn start" id="srv-start-btn" onclick="startService('server')">▶ Start Server</button>
+        <button class="svc-btn stop" id="srv-stop-btn" onclick="stopService('server')" disabled>■ Stop</button>
+      </div>
+      <div class="svc-metrics">
+        <div class="svc-metric"><span class="label">Model: </span><span class="val" id="srv-model">—</span></div>
+        <div class="svc-metric"><span class="label">Device: </span><span class="val" id="srv-device">—</span></div>
+        <div class="svc-metric"><span class="label">Port: </span><span class="val">8000</span></div>
+      </div>
+    </div>
+
+    <!-- Relay -->
+    <div class="service-card" id="svc-relay">
+      <div class="svc-top">
+        <div class="svc-left">
+          <div class="svc-icon" style="background:rgba(77,159,255,.1);border-color:rgba(77,159,255,.3)">📡</div>
+          <div>
+            <div class="svc-name">Camera Relay</div>
+            <div class="svc-desc">Streams camera feeds to server<br>local_test_relay.py</div>
+          </div>
+        </div>
+        <div class="svc-status s-stopped" id="rel-status-wrap">
+          <span class="status-dot"></span>
+          <span id="rel-status-text">STOPPED</span>
+        </div>
+      </div>
+      <div class="svc-btn-row">
+        <button class="svc-btn start" id="rel-start-btn" onclick="startService('relay')" disabled>▶ Start Relay</button>
+        <button class="svc-btn stop" id="rel-stop-btn" onclick="stopService('relay')" disabled>■ Stop</button>
+      </div>
+      <div class="svc-metrics">
+        <div class="svc-metric"><span class="label">Stations: </span><span class="val" id="rel-stations">4</span></div>
+        <div class="svc-metric"><span class="label">FPS: </span><span class="val" id="rel-fps">—</span></div>
+        <div class="svc-metric"><span class="label">Frames: </span><span class="val" id="rel-frames">0</span></div>
+      </div>
+    </div>
+
+    <!-- Qubeyond -->
+    <div class="service-card" id="svc-qubeyond">
+      <div class="svc-top">
+        <div class="svc-left">
+          <div class="svc-icon" style="background:rgba(0,229,160,.1);border-color:rgba(0,229,160,.3)">🧾</div>
+          <div>
+            <div class="svc-name">Qubeyond Events</div>
+            <div class="svc-desc">Kitchen order event stream<br>/webhook/qubeyond/kitchen-event</div>
+          </div>
+        </div>
+        <div class="svc-status s-stopped" id="qb-status-wrap">
+          <span class="status-dot"></span>
+          <span id="qb-status-text">STOPPED</span>
+        </div>
+      </div>
+      <div class="svc-btn-row">
+        <button class="svc-btn start" id="qb-start-btn" onclick="startService('qubeyond')" disabled>▶ Start Events</button>
+        <button class="svc-btn stop" id="qb-stop-btn" onclick="stopService('qubeyond')" disabled>■ Stop</button>
+        <button class="svc-btn" onclick="fireTestEvent()" id="qb-test-btn" disabled style="color:var(--green);border-color:rgba(0,229,160,.3)">⚡ Test Event</button>
+      </div>
+      <div class="svc-metrics">
+        <div class="svc-metric"><span class="label">Events: </span><span class="val" id="qb-events">0</span></div>
+        <div class="svc-metric"><span class="label">Intercepts: </span><span class="val" id="qb-intercepts">0</span></div>
+        <div class="svc-metric"><span class="label">Saved: </span><span class="val" id="qb-saved">$0</span></div>
+      </div>
+    </div>
+
+    <!-- Video Inspection -->
+    <div class="service-card" id="svc-video-inspect">
+      <div class="svc-top">
+        <div class="svc-left">
+          <div class="svc-icon" style="background:rgba(0,184,107,.1);border-color:rgba(0,184,107,.3)">📤</div>
+          <div>
+            <div class="svc-name">Video Inspection</div>
+            <div class="svc-desc">Analyze raw video file<br>Compare with order details</div>
+          </div>
+        </div>
+        <div class="svc-status s-stopped" id="vid-status-wrap">
+          <span class="status-dot"></span>
+          <span id="vid-status-text">IDLE</span>
+        </div>
+      </div>
+      <div class="svc-btn-row" style="flex-direction:column; gap:0.5rem">
+        <div style="display:flex; gap:0.5rem; width:100%">
+          <select id="vid-order-select" class="svc-btn" style="flex:1; background:var(--surface); border:1px solid var(--border); color:var(--text); font-family:var(--font-mono); font-size:10px; padding:4px 6px">
+            <option value="ORD-4821">ORD-4821 (Burger, Fries, Drink)</option>
+            <option value="ORD-4822">ORD-4822 (Nuggets, Drink)</option>
+            <option value="ORD-4823">ORD-4823 (Sandwich, Drink)</option>
+            <option value="ORD-4824">ORD-4824 (Burger, Fries)</option>
+            <option value="ORD-4825">ORD-4825 (Wrap, Salad, Drink)</option>
+            <option value="ORD-4826">ORD-4826 (Burger, Fries, Drink)</option>
+          </select>
+        </div>
+        <div style="display:flex; gap:0.5rem; width:100%">
+          <button class="svc-btn start" style="flex:1" id="vid-upload-btn" onclick="document.getElementById('video-inspect-file').click()">▶ Upload Video</button>
+          <button class="svc-btn stop" id="vid-cancel-btn" onclick="cancelVideoInspection()" disabled>■ Cancel</button>
+        </div>
+        <input type="file" id="video-inspect-file" accept="video/*" style="display:none" onchange="uploadVideoForInspection(event)">
+      </div>
+      <!-- Progress Bar -->
+      <div id="vid-progress-container" style="display:none; margin-top:0.75rem">
+        <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:9px; color:var(--muted); margin-bottom:3px">
+          <span>Processing Video...</span>
+          <span id="vid-progress-pct">0%</span>
+        </div>
+        <div style="width:100%; height:4px; background:var(--border); border-radius:2px; overflow:hidden">
+          <div id="vid-progress-bar" style="width:0%; height:100%; background:var(--green)"></div>
+        </div>
+      </div>
+      <!-- Real-time verification results card -->
+      <div id="vid-results-card" style="display:none; margin-top:0.75rem; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:0.5rem">
+        <div style="font-family:var(--font-mono); font-size:10px; font-weight:bold; color:var(--text); margin-bottom:5px; border-bottom:1px solid var(--border); padding-bottom:3px">VERIFICATION RESULTS</div>
+        <div id="vid-expected-list" style="margin-bottom:5px"></div>
+        <div id="vid-verdict" style="font-family:var(--font-mono); font-size:10px; font-weight:bold; text-align:center; padding:4px; border-radius:4px"></div>
+      </div>
+    </div>
+
+    <!-- Log panel -->
+    <div class="section-hdr" style="margin-top:auto">
+      System Log
+      <button onclick="clearLog()" style="font-family:var(--font-mono);font-size:9px;background:transparent;border:none;color:var(--muted);cursor:pointer;letter-spacing:.06em">CLEAR</button>
+    </div>
+    <div class="log-panel">
+      <div class="log-body" id="log-body"></div>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT: Main content ── -->
+  <div class="main-col">
+
+    <!-- Stats strip -->
+    <div class="stats-strip">
+      <div class="stat-mini"><div class="v" id="st-frames" style="color:var(--green)">0</div><div class="l">Frames</div></div>
+      <div class="stat-mini"><div class="v" id="st-dets" style="color:var(--blue)">0</div><div class="l">Detections</div></div>
+      <div class="stat-mini"><div class="v" id="st-orders" style="color:var(--amber)">0</div><div class="l">Orders</div></div>
+      <div class="stat-mini"><div class="v" id="st-intercepts" style="color:var(--red)">0</div><div class="l">Intercepts</div></div>
+      <div class="stat-mini"><div class="v" id="st-saved" style="color:var(--green)">$0</div><div class="l">Saved</div></div>
+    </div>
+
+    <!-- Camera feeds -->
+    <div class="cam-section" style="flex:1;overflow-y:auto">
+      <div class="cam-grid-title">Live Camera Feeds</div>
+      <div class="cam-grid" id="cam-grid"></div>
+    </div>
+
+    <!-- Qubeyond events -->
+    <div class="qb-section">
+      <div class="section-hdr">
+        Kitchen Order Events
+        <span id="qb-live-badge" style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">INACTIVE</span>
+      </div>
+      <div class="qb-events" id="qb-event-list">
+        <div style="padding:1.5rem;text-align:center;font-family:var(--font-mono);font-size:11px;color:var(--muted)">Start Qubeyond Events service to see order completions</div>
+      </div>
+    </div>
+
+    <!-- Ticker -->
+    <div class="ticker">
+      <span class="ticker-label">Live</span>
+      <div class="ticker-track">
+        <div class="ticker-inner" id="ticker-inner"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════
+const SVC = {
+  camera:   {state:'stopped', timer:null, frames:0},
+  server:   {state:'stopped', timer:null, health:null},
+  relay:    {state:'stopped', timer:null, frames:0, fps:0},
+  qubeyond: {state:'stopped', timer:null, events:0, intercepts:0, saved:0},
+  'video-inspect': {state:'stopped', timer:null},
+};
+const STATIONS = ['station_1','station_2','station_3','station_4','video_inspector'];
+const WS = {};
+let totalFrames=0, totalDets=0, totalOrders=0, totalIntercepts=0, totalSaved=0;
+let logEntries=[];
+
+const isFile = window.location.protocol === 'file:';
+const host = isFile ? 'localhost:8000' : (window.location.host || 'localhost:8000');
+const protocol = isFile ? 'http:' : window.location.protocol;
+const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
+
+const SERVER_BASE = `${protocol}//${host}`;
+const WS_BASE     = `${wsProtocol}//${host}`;
+
+// ══════════════════════════════════════════════════════════
+// CLOCK
+// ══════════════════════════════════════════════════════════
+function updateClock(){
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  document.getElementById('dateline').textContent =
+    now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase();
+}
+setInterval(updateClock,1000); updateClock();
+
+// ══════════════════════════════════════════════════════════
+// LOG
+// ══════════════════════════════════════════════════════════
+function log(svc, msg, type=''){
+  const now = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  logEntries.unshift({ts:now,svc,msg,type});
+  if(logEntries.length>200) logEntries.pop();
+  renderLog();
+}
+function renderLog(){
+  document.getElementById('log-body').innerHTML =
+    logEntries.slice(0,60).map(e=>`
+      <div class="log-entry">
+        <span class="log-ts">${e.ts}</span>
+        <span class="log-svc ${e.svc}">${e.svc.padEnd(6)}</span>
+        <span class="log-msg ${e.type}">${e.msg}</span>
+      </div>`).join('');
+}
+function clearLog(){ logEntries=[]; renderLog(); }
+
+// ══════════════════════════════════════════════════════════
+// SERVICE STATE UI
+// ══════════════════════════════════════════════════════════
+function setServiceState(svc, state){
+  SVC[svc].state = state;
+  const map = {
+    camera:   {wrap:'cam-status-wrap', text:'cam-status-text', start:'cam-start-btn', stop:'cam-stop-btn'},
+    server:   {wrap:'srv-status-wrap', text:'srv-status-text', start:'srv-start-btn', stop:'srv-stop-btn'},
+    relay:    {wrap:'rel-status-wrap', text:'rel-status-text', start:'rel-start-btn', stop:'rel-stop-btn'},
+    qubeyond: {wrap:'qb-status-wrap',  text:'qb-status-text',  start:'qb-start-btn',  stop:'qb-stop-btn'},
+    'video-inspect': {wrap:'vid-status-wrap', text:'vid-status-text', start:'vid-upload-btn', stop:'vid-cancel-btn'},
+  }[svc];
+  const wrap  = document.getElementById(map.wrap);
+  const text  = document.getElementById(map.text);
+  const start = document.getElementById(map.start);
+  const stop  = document.getElementById(map.stop);
+  wrap.className = `svc-status s-${state}`;
+  text.textContent = state.toUpperCase();
+  start.disabled = state !== 'stopped' && state !== 'error';
+  stop.disabled  = state === 'stopped' || state === 'error';
+  updateAllServicesLabel();
+  // Unlock relay when both camera and server are running
+  if(svc==='camera'||svc==='server'){
+    const relStart = document.getElementById('rel-start-btn');
+    relStart.disabled = !(SVC.camera.state==='running' && SVC.server.state==='running');
+  }
+  // Unlock qubeyond when server is running
+  if(svc==='server'){
+    const qbStart = document.getElementById('qb-start-btn');
+    const qbTest  = document.getElementById('qb-test-btn');
+    qbStart.disabled = state !== 'running';
+    qbTest.disabled  = state !== 'running';
+  }
+}
+
+function updateAllServicesLabel(){
+  const states = Object.values(SVC).map(s=>s.state);
+  const el = document.getElementById('svc-all-status');
+  if(states.every(s=>s==='running'))       {el.textContent='ALL RUNNING'; el.style.color='var(--green)';}
+  else if(states.every(s=>s==='stopped'))  {el.textContent='ALL STOPPED'; el.style.color='var(--muted)';}
+  else if(states.some(s=>s==='error'))     {el.textContent='DEGRADED';    el.style.color='var(--red)';}
+  else                                     {el.textContent='PARTIAL';     el.style.color='var(--amber)';}
+}
+
+// ══════════════════════════════════════════════════════════
+// SERVICE START/STOP SIMULATIONS
+// ══════════════════════════════════════════════════════════
+function startService(svc){
+  setServiceState(svc,'starting');
+  log(svc, `Starting ${svc}...`, 'warn');
+  const delays = {camera:1200, server:2800, relay:900, qubeyond:600};
+  setTimeout(()=>{
+    setServiceState(svc,'running');
+    const msgs = {
+      camera:   'Fake camera server ready — 4 MJPEG streams on :8554',
+      server:   'FastAPI + YOLO model loaded — device: MPS — port 8000',
+      relay:    'Relay connected — streaming 4 stations to server',
+      qubeyond: 'Qubeyond webhook listener active — /webhook/qubeyond/kitchen-event',
+    };
+    log(svc, msgs[svc], 'ok');
+    onServiceStarted(svc);
+  }, delays[svc]);
+}
+
+function stopService(svc){
+  setServiceState(svc,'stopping');
+  log(svc, `Stopping ${svc}...`, 'warn');
+  setTimeout(()=>{
+    setServiceState(svc,'stopped');
+    log(svc, `${svc} stopped`);
+    onServiceStopped(svc);
+  }, 600);
+}
+
+function onServiceStarted(svc){
+  if(svc==='camera'){
+    SVC.camera.timer = setInterval(()=>{
+      SVC.camera.frames++;
+      document.getElementById('cam-fps').textContent = '10 fps';
+    },100);
+  }
+  if(svc==='server'){
+    // Try to poll health
+    pollServerHealth();
+    SVC.server.timer = setInterval(pollServerHealth, 5000);
+    document.getElementById('srv-model').textContent = 'YOLOv8n';
+    document.getElementById('srv-device').textContent = 'MPS';
+  }
+  if(svc==='relay'){
+    startViewerConnections();
+    SVC.relay.timer = setInterval(()=>{
+      SVC.relay.frames += 8;
+      document.getElementById('rel-frames').textContent = SVC.relay.frames;
+      document.getElementById('rel-fps').textContent = '8 fps';
+    },1000);
+  }
+  if(svc==='qubeyond'){
+    document.getElementById('qb-live-badge').textContent = '● LIVE';
+    document.getElementById('qb-live-badge').style.color = 'var(--green)';
+    // Simulate periodic Qubeyond events
+    SVC.qubeyond.timer = setInterval(simulateQubeyondEvent, 6000);
+  }
+}
+
+function onServiceStopped(svc){
+  if(SVC[svc].timer){ clearInterval(SVC[svc].timer); SVC[svc].timer=null; }
+  if(svc==='relay'){ disconnectViewers(); }
+  if(svc==='camera'){ document.getElementById('cam-fps').textContent='—'; }
+  if(svc==='relay'){
+    document.getElementById('rel-fps').textContent='—';
+    resetCameras();
+  }
+  if(svc==='qubeyond'){
+    document.getElementById('qb-live-badge').textContent='INACTIVE';
+    document.getElementById('qb-live-badge').style.color='var(--muted)';
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// SERVER HEALTH POLL
+// ══════════════════════════════════════════════════════════
+function pollServerHealth(){
+  fetch(`${SERVER_BASE}/health`)
+    .then(r=>r.json())
+    .then(d=>{
+      document.getElementById('srv-device').textContent = d.device || 'MPS';
+      if(SVC.server.state !== 'running'){
+        setServiceState('server','running');
+        log('server','Server health OK — '+d.device,'ok');
+      }
+    })
+    .catch(()=>{
+      // Server not reachable — that's fine in simulation mode
+    });
+}
+
+// ══════════════════════════════════════════════════════════
+// CAMERA GRID
+// ══════════════════════════════════════════════════════════
+function buildCamGrid(){
+  const grid = document.getElementById('cam-grid');
+  grid.innerHTML = STATIONS.map(sid=>`
+    <div class="cam-card" id="cc-${sid}">
+      <div class="cam-head">
+        <span class="cam-id">${sid === 'video_inspector' ? 'Video Upload Inspector' : sid.replace('_',' ')}</span>
+        <span class="cam-pill cp-idle" id="cp-${sid}">IDLE</span>
+      </div>
+      <div class="cam-viewport">
+        <canvas class="cam-canvas" id="cv-${sid}"></canvas>
+        <div class="cam-overlay" id="co-${sid}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/></svg>
+          <span id="co-text-${sid}">AWAITING RELAY</span>
+        </div>
+        <span class="cam-ts" id="cts-${sid}"></span>
+      </div>
+      <div class="cam-footer" id="cf-${sid}">
+        <span class="no-det">No detections</span>
+      </div>
+    </div>`).join('');
+}
+
+function resetCameras(){
+  STATIONS.forEach(sid=>{
+    setCardState(sid,'');
+    setPill(sid,'IDLE','cp-idle');
+    const overlay=document.getElementById(`co-${sid}`);
+    if(overlay) overlay.style.display='flex';
+    document.getElementById(`co-text-${sid}`).textContent='AWAITING RELAY';
+    document.getElementById(`cf-${sid}`).innerHTML='<span class="no-det">No detections</span>';
+    document.getElementById(`cts-${sid}`).textContent='';
+  });
+}
+
+function setCardState(sid,state){
+  const card=document.getElementById(`cc-${sid}`);
+  if(card) card.className='cam-card'+(state?' cam-'+state:'');
+}
+function setPill(sid,text,cls){
+  const p=document.getElementById(`cp-${sid}`);
+  if(p){p.textContent=text;p.className='cam-pill '+cls;}
+}
+
+// ══════════════════════════════════════════════════════════
+// VIEWER WEBSOCKET CONNECTIONS
+// ══════════════════════════════════════════════════════════
+function startViewerConnections(){
+  STATIONS.filter(sid => sid !== 'video_inspector').forEach(sid=>{
+    connectViewer(sid);
+  });
+}
+
+function connectViewer(sid){
+  if(WS[sid]){ try{WS[sid].close();}catch{} }
+  const ws = new WebSocket(`${WS_BASE}/ws/view/${sid}`);
+  WS[sid] = ws;
+  setPill(sid,'CONNECTING','cp-wait');
+
+  ws.onopen = ()=>{
+    setPill(sid,'LIVE','cp-live');
+    log('relay', `Viewer connected: ${sid}`, 'ok');
+    document.getElementById(`co-text-${sid}`).textContent = 'CONNECTED — AWAITING FRAME';
+  };
+  ws.onmessage = (e)=>{
+    try{
+      const msg = JSON.parse(e.data);
+      if(msg.ping) return;
+      if(msg.error){ log('relay', `${sid}: ${msg.error}`, 'err'); return; }
+      handleFrame(sid, msg);
+    }catch{}
+  };
+  ws.onerror = ()=>{
+    // Server not running — simulate frames instead
+    setPill(sid,'SIM','cp-wait');
+    document.getElementById(`co-text-${sid}`).textContent='SERVER OFFLINE — SIMULATING';
+    startSimFrame(sid);
+  };
+  ws.onclose = ()=>{
+    if(SVC.relay.state === 'running'){
+      // Try to reconnect after a moment
+      setTimeout(()=>{ if(SVC.relay.state==='running') connectViewer(sid); }, 3000);
+    }
+  };
+}
+
+function disconnectViewers(){
+  STATIONS.filter(sid => sid !== 'video_inspector').forEach(sid=>{
+    if(WS[sid]){ try{WS[sid].close();}catch{}; delete WS[sid]; }
+    stopSimFrame(sid);
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+// SIMULATED FRAME RENDERING (when server is offline)
+// ══════════════════════════════════════════════════════════
+const SIM_TIMERS = {};
+const SIM_ITEMS = [
+  {name:'Burger',  color:'#FF6B35', x:.25,y:.5, w:.2, h:.22},
+  {name:'Fries',   color:'#FFD166', x:.5, y:.5, w:.14,h:.2},
+  {name:'Drink',   color:'#9B5DE5', x:.72,y:.5, w:.1, h:.24},
+  {name:'Nuggets', color:'#EF476F', x:.38,y:.5, w:.16,h:.16},
+];
+
+function startSimFrame(sid){
+  let frame=0;
+  SIM_TIMERS[sid] = setInterval(()=>{
+    frame++;
+    const cv = document.getElementById(`cv-${sid}`);
+    if(!cv) return;
+    const ov = document.getElementById(`co-${sid}`);
+    if(ov) ov.style.display='none';
+    cv.width = cv.offsetWidth||320;
+    cv.height= cv.offsetHeight||180;
+    const ctx = cv.getContext('2d');
+    const W=cv.width, H=cv.height;
+    ctx.fillStyle='#06090D';ctx.fillRect(0,0,W,H);
+    // grid
+    ctx.strokeStyle='rgba(20,28,42,.9)';ctx.lineWidth=.5;
+    for(let x=0;x<W;x+=W/10){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+    for(let y=0;y<H;y+=H/7){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+    // Tray
+    const t=frame;
+    const missing=(Math.floor(t/80))%SIM_ITEMS.length;
+    ctx.fillStyle='rgba(16,22,33,.85)';
+    rr(ctx,W*.08,H*.2,W*.84,H*.62,4);ctx.fill();
+    const trayOk=missing<0;
+    ctx.strokeStyle=trayOk?'rgba(0,229,160,.6)':'rgba(255,61,90,.7)';
+    ctx.lineWidth=1.5;
+    if(!trayOk) ctx.setLineDash([6,3]); else ctx.setLineDash([]);
+    rr(ctx,W*.08,H*.2,W*.84,H*.62,4);ctx.stroke();
+    ctx.setLineDash([]);
+    // Items
+    SIM_ITEMS.forEach((item,i)=>{
+      const absent=(i===missing);
+      const cx=item.x*W+Math.sin(t*.03+i)*1.5;
+      const cy=item.y*H;
+      const bw=item.w*W,bh=item.h*H;
+      if(absent){
+        ctx.fillStyle='rgba(255,61,90,.06)';
+        ctx.strokeStyle='rgba(255,61,90,.5)';
+        ctx.setLineDash([4,3]);ctx.lineWidth=1;
+      } else {
+        ctx.fillStyle=item.color+'22';
+        ctx.strokeStyle=item.color;
+        ctx.setLineDash([]);ctx.lineWidth=1.5;
+      }
+      ctx.beginPath();ctx.rect(cx-bw/2,cy-bh/2,bw,bh);ctx.fill();ctx.stroke();
+      ctx.setLineDash([]);
+      // emoji
+      ctx.font=`${Math.round(bh*.55)}px serif`;
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.globalAlpha=absent?.15:1;
+      const emojis=['🍔','🍟','🥤','🍗'];
+      ctx.fillText(emojis[i],cx,cy);
+      ctx.globalAlpha=1;ctx.textBaseline='alphabetic';
+      // label
+      ctx.fillStyle=absent?'rgba(255,61,90,.7)':item.color;
+      ctx.font=`bold ${Math.round(W*.028)}px 'DM Mono',monospace`;
+      ctx.textAlign='center';
+      ctx.fillText(item.name.toUpperCase(),cx,cy+bh/2+11);
+      if(absent){
+        ctx.fillStyle='rgba(255,61,90,.9)';
+        ctx.fillRect(cx-26,cy-7,52,14);
+        ctx.fillStyle='#fff';ctx.font=`bold 9px monospace`;
+        ctx.fillText('MISSING',cx,cy+3);
+      }
+    });
+    // ts
+    ctx.fillStyle='rgba(140,163,196,.4)';ctx.font=`8px 'DM Mono',monospace`;ctx.textAlign='right';
+    ctx.fillText(new Date().toLocaleTimeString('en-US',{hour12:false}),W-.5*.08*W,H*.92);
+    // Update card
+    const presentItems = SIM_ITEMS.filter((_,i)=>i!==missing);
+    if(missing>=0){
+      setCardState(sid,'alert');
+      setPill(sid,'✗ MISSING','cp-alert');
+    } else {
+      setCardState(sid,'ok');
+      setPill(sid,'✓ OK','cp-live');
+    }
+    const footer=document.getElementById(`cf-${sid}`);
+    if(footer) footer.innerHTML=presentItems.map(it=>`<span class="det-chip dc-ok">${it.name}</span>`).join('')+(missing>=0?`<span class="det-chip" style="background:var(--red-bg);color:var(--red);border-color:rgba(255,61,90,.3)">${SIM_ITEMS[missing].name} ✗</span>`:'');
+    document.getElementById(`cts-${sid}`).textContent=new Date().toLocaleTimeString('en-US',{hour12:false});
+    // stats
+    totalFrames++;
+    totalDets+=presentItems.length;
+    document.getElementById('st-frames').textContent=totalFrames;
+    document.getElementById('st-dets').textContent=totalDets;
+  },120);
+}
+
+function stopSimFrame(sid){
+  if(SIM_TIMERS[sid]){ clearInterval(SIM_TIMERS[sid]); delete SIM_TIMERS[sid]; }
+}
+
+function rr(ctx,x,y,w,h,r){
+  ctx.beginPath();ctx.moveTo(x+r,y);
+  ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
+}
+
+// ══════════════════════════════════════════════════════════
+// REAL FRAME HANDLING (when server IS running)
+// ══════════════════════════════════════════════════════════
+function handleFrame(sid, msg){
+  stopSimFrame(sid);
+  const dets=msg.detections||[];
+  totalFrames++;
+  if(dets.length>0) totalDets+=dets.length;
+  document.getElementById('st-frames').textContent=totalFrames;
+  document.getElementById('st-dets').textContent=totalDets;
+  setCardState(sid, dets.length>0?'ok':'');
+  setPill(sid, dets.length>0?`✓ ${dets.length}`:'SCANNING', dets.length>0?'cp-live':'cp-wait');
+  if(msg.frame){
+    const img=new Image();
+    img.onload=()=>{
+      const cv=document.getElementById(`cv-${sid}`);if(!cv)return;
+      const ov=document.getElementById(`co-${sid}`);if(ov)ov.style.display='none';
+      cv.width=img.naturalWidth||640;cv.height=img.naturalHeight||480;
+      cv.getContext('2d').drawImage(img,0,0);
+    };
+    img.src=`data:image/jpeg;base64,${msg.frame}`;
+  }
+  const footer=document.getElementById(`cf-${sid}`);
+  if(footer){
+    footer.innerHTML = dets.length===0
+      ? '<span class="no-det">No detections</span>'
+      : dets.map(d=>`<span class="det-chip dc-ok">${d.label} ${Math.round(d.confidence*100)}%</span>`).join('');
+  }
+  document.getElementById(`cts-${sid}`).textContent=new Date().toLocaleTimeString('en-US',{hour12:false});
+}
+
+// ══════════════════════════════════════════════════════════
+// QUBEYOND EVENTS
+// ══════════════════════════════════════════════════════════
+const QB_EVENTS_DATA=[
+  {type:'ok',  order:'ORD-4821',station:'station_1',outlet:'Vacaville', items:['Burger','Fries','Drink'],missing:[]},
+  {type:'bad', order:'ORD-4822',station:'station_2',outlet:'Vacaville', items:['Nuggets','Drink'],       missing:['Fries']},
+  {type:'ok',  order:'ORD-4823',station:'station_3',outlet:'Sacramento',items:['Sandwich','Drink'],      missing:[]},
+  {type:'warn',order:'ORD-4824',station:'station_4',outlet:'Sacramento',items:['Burger','Fries'],        missing:['Drink']},
+  {type:'ok',  order:'ORD-4825',station:'station_1',outlet:'Vacaville', items:['Wrap','Salad','Drink'],  missing:[]},
+  {type:'bad', order:'ORD-4826',station:'station_2',outlet:'Sacramento',items:['Burger','Fries','Drink'],missing:['Burger']},
+];
+let qbIdx=0;
+const qbEventLog=[];
+
+function simulateQubeyondEvent(){
+  const ev=QB_EVENTS_DATA[qbIdx%QB_EVENTS_DATA.length]; qbIdx++;
+  const hasMiss=ev.missing.length>0;
+  SVC.qubeyond.events++;
+  document.getElementById('qb-events').textContent=SVC.qubeyond.events;
+  if(hasMiss){
+    SVC.qubeyond.intercepts++;
+    const savedAmt=ev.missing.length*4.5;
+    SVC.qubeyond.saved=+(SVC.qubeyond.saved+savedAmt).toFixed(2);
+    totalIntercepts++;
+    totalSaved=+(totalSaved+savedAmt).toFixed(2);
+    document.getElementById('qb-intercepts').textContent=SVC.qubeyond.intercepts;
+    document.getElementById('qb-saved').textContent='$'+SVC.qubeyond.saved.toFixed(2);
+    document.getElementById('st-intercepts').textContent=totalIntercepts;
+    document.getElementById('st-saved').textContent='$'+totalSaved.toFixed(2);
+  }
+  totalOrders++;
+  document.getElementById('st-orders').textContent=totalOrders;
+
+  const ts=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  qbEventLog.unshift({...ev, ts, savedAmt:hasMiss?(ev.missing.length*4.5):0});
+  if(qbEventLog.length>30) qbEventLog.pop();
+  renderQbEvents();
+
+  if(hasMiss){
+    log('qb',`INTERCEPT ${ev.order}: Missing ${ev.missing.join(', ')} — $${(ev.missing.length*4.5).toFixed(2)} saved`,'ok');
+    setCardState(ev.station,'alert');
+    setPill(ev.station,'⚠ MISSING','cp-alert');
+    setTimeout(()=>{setCardState(ev.station,'ok');setPill(ev.station,'✓ OK','cp-live');},4000);
+  } else {
+    log('qb',`${ev.order} verified — ${ev.items.join(', ')} ✓`,'ok');
+  }
+}
+
+function renderQbEvents(){
+  if(qbEventLog.length===0) return;
+  const list=document.getElementById('qb-event-list');
+  list.innerHTML=qbEventLog.map(ev=>{
+    const iconMap={ok:'✓',bad:'⚠',warn:'~'};
+    return`<div class="qb-row">
+      <div class="qb-icon ${ev.type}">${iconMap[ev.type]}</div>
+      <div class="qb-content">
+        <div class="qb-title">${ev.order} · ${ev.outlet} · ${ev.station.replace('_',' ')}
+          ${ev.missing.length?`<span style="color:var(--red);font-size:11px;margin-left:6px">MISSING: ${ev.missing.join(', ')}</span>`:'<span style="color:var(--green);font-size:11px;margin-left:6px">All present ✓</span>'}
+        </div>
+        <div class="qb-meta">${ev.items.join(' · ')}${ev.savedAmt>0?` · <span style="color:var(--green)">$${ev.savedAmt.toFixed(2)} saved</span>`:''}</div>
+      </div>
+      <span class="qb-time">${ev.ts}</span>
+    </div>`;
+  }).join('');
+}
+
+function fireTestEvent(){
+  if(SVC.qubeyond.state!=='running') return;
+  log('qb','Firing test Qubeyond event...','warn');
+  simulateQubeyondEvent();
+}
+
+// ══════════════════════════════════════════════════════════
+// TICKER
+// ══════════════════════════════════════════════════════════
+function buildTicker(){
+  const items=[
+    {col:'var(--green)',  msg:'System control centre ready — all services configurable'},
+    {col:'var(--purple)', msg:'Fake camera server: 4 synthetic MJPEG streams available'},
+    {col:'var(--amber)',  msg:'Detection server: YOLOv8 with MPS/CUDA acceleration'},
+    {col:'var(--blue)',   msg:'Camera relay: WebSocket bridge from LAN to cloud server'},
+    {col:'var(--green)',  msg:'Qubeyond integration: ORDER_COMPLETE webhook receiver active'},
+    {col:'var(--red)',    msg:'Intercept mode: missing items flagged before bag sealed'},
+  ];
+  const doubled=[...items,...items];
+  document.getElementById('ticker-inner').innerHTML=doubled.map(i=>`
+    <div class="ticker-item">
+      <span class="ticker-dot" style="background:${i.col}"></span>
+      <span>${i.msg}</span>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════
+buildCamGrid();
+buildTicker();
+log('system','KitchEye Control Centre initialised','ok');
+log('system','Start services in order: Camera → Server → Relay → Qubeyond');
+
+// Show how instruction flow works on load
+document.getElementById(`co-text-station_1`).textContent='CLICK START CAMERA';
+if(document.getElementById('co-text-video_inspector')) {
+  document.getElementById('co-text-video_inspector').textContent='AWAITING VIDEO UPLOAD';
+}
+
+// ══════════════════════════════════════════════════════════
+// VIDEO INSPECTOR UPLOAD LOGIC
+// ══════════════════════════════════════════════════════════
+let uploadSocket = null;
+
+function uploadVideoForInspection(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const orderId = document.getElementById('vid-order-select').value;
+  const orderData = QB_EVENTS_DATA.find(o => o.order === orderId);
+  if (!orderData) return;
+
+  log('system', `Preparing manual inspection for order ${orderId}...`, 'warn');
+
+  // Change Service Card Status to STARTING
+  setServiceState('video-inspect', 'starting');
+  document.getElementById('vid-status-text').textContent = 'CONNECTING';
+  document.getElementById('vid-progress-container').style.display = 'block';
+  document.getElementById('vid-progress-bar').style.width = '0%';
+  document.getElementById('vid-progress-pct').textContent = '0%';
+  document.getElementById('vid-results-card').style.display = 'none';
+
+  // Set Video Inspector Card to Scanning state
+  const sid = 'video_inspector';
+  setCardState(sid, '');
+  setPill(sid, 'CONNECTING', 'cp-wait');
+  document.getElementById(`co-text-${sid}`).textContent = 'OPENING WEBSOCKET...';
+
+  // Read file as ArrayBuffer
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const arrayBuffer = e.target.result;
+
+    // Establish WebSocket to /ws/video
+    const wsUrl = `${WS_BASE}/ws/video`;
+    uploadSocket = new WebSocket(wsUrl);
+
+    uploadSocket.onopen = () => {
+      log('system', `Uploading video for YOLO analysis...`, 'warn');
+      document.getElementById('vid-status-text').textContent = 'UPLOADING';
+      setPill(sid, 'SCANNING', 'cp-wait');
+      document.getElementById(`co-text-${sid}`).textContent = 'ANALYZING FILE...';
+      // Send binary bytes
+      uploadSocket.send(arrayBuffer);
+    };
+
+    uploadSocket.onmessage = (msgEvent) => {
+      try {
+        const msg = JSON.parse(msgEvent.data);
+        if (msg.error) {
+          log('system', `Inspection error: ${msg.error}`, 'err');
+          setServiceState('video-inspect', 'error');
+          document.getElementById('vid-status-text').textContent = 'ERROR';
+          setPill(sid, 'ERROR', 'cp-alert');
+          document.getElementById(`co-text-${sid}`).textContent = 'PROCESSING FAILED';
+          if (uploadSocket) {
+            uploadSocket.close();
+          }
+          return;
+        }
+
+        if (msg.done) {
+          log('system', `Video processing complete.`, 'ok');
+          setServiceState('video-inspect', 'running');
+          document.getElementById('vid-status-text').textContent = 'COMPLETE';
+          setPill(sid, 'COMPLETE', 'cp-live');
+          document.getElementById(`co-text-${sid}`).textContent = 'INSPECTION COMPLETE';
+          document.getElementById('vid-progress-bar').style.width = '100%';
+          document.getElementById('vid-progress-pct').textContent = '100%';
+          uploadSocket.close();
+          return;
+        }
+
+        // We got a frame
+        const frameIdx = msg.frame_idx;
+        const totalFrames = msg.total_frames;
+        const pct = Math.round((frameIdx / totalFrames) * 100);
+
+        document.getElementById('vid-progress-bar').style.width = `${pct}%`;
+        document.getElementById('vid-progress-pct').textContent = `${pct}%`;
+        document.getElementById('vid-status-text').textContent = `INSPECTING (${pct}%)`;
+
+        // Render Frame to canvas-video_inspector
+        handleFrame(sid, msg);
+
+        // Compare detections with order
+        matchVideoDetections(orderData, msg.detections);
+      } catch (err) {
+        console.error("Failed to parse websocket message:", err);
+      }
+    };
+
+    uploadSocket.onerror = (err) => {
+      log('system', `WebSocket error during inspection.`, 'err');
+      setServiceState('video-inspect', 'error');
+      document.getElementById('vid-status-text').textContent = 'ERROR';
+      setPill(sid, 'ERROR', 'cp-alert');
+      document.getElementById(`co-text-${sid}`).textContent = 'WEBSOCKET ERROR';
+    };
+
+    uploadSocket.onclose = () => {
+      const wasComplete = SVC['video-inspect'].state === 'running';
+      setServiceState('video-inspect', 'stopped');
+      document.getElementById('vid-status-text').textContent = wasComplete ? 'COMPLETE' : 'IDLE';
+      document.getElementById('vid-cancel-btn').disabled = true;
+      document.getElementById('vid-upload-btn').disabled = false;
+      document.getElementById('video-inspect-file').value = '';
+      uploadSocket = null;
+    };
+  };
+
+  reader.readAsArrayBuffer(file);
+  document.getElementById('vid-cancel-btn').disabled = false;
+  document.getElementById('vid-upload-btn').disabled = true;
+}
+
+function cancelVideoInspection() {
+  if (uploadSocket) {
+    uploadSocket.close();
+    uploadSocket = null;
+  }
+  log('system', `Video inspection cancelled.`, 'warn');
+}
+
+function matchVideoDetections(order, detections) {
+  // expected items: order.items + order.missing
+  const expectedItems = [...order.items, ...order.missing];
+  
+  // count detections
+  const detectedLabels = detections.map(d => d.label.toLowerCase());
+  
+  const resultsCard = document.getElementById('vid-results-card');
+  const expectedList = document.getElementById('vid-expected-list');
+  const verdict = document.getElementById('vid-verdict');
+  
+  resultsCard.style.display = 'block';
+  
+  let html = '';
+  let missingItems = [];
+  
+  // Group expected items
+  const counts = {};
+  expectedItems.forEach(item => {
+    // Map item name to YOLO label
+    const label = _to_label(item);
+    if (label) {
+      counts[label] = counts[label] || { name: item, count: 0, detected: 0 };
+      counts[label].count++;
+    }
+  });
+  
+  // Count matches
+  detectedLabels.forEach(label => {
+    if (counts[label]) {
+      counts[label].detected++;
+    }
+  });
+  
+  // Build comparison display
+  for (const label in counts) {
+    const item = counts[label];
+    const diff = item.count - item.detected;
+    if (diff > 0) {
+      missingItems.push(`${item.name} ×${diff}`);
+      html += `<div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:10px; color:var(--red); margin-bottom:2px">
+        <span>❌ ${item.name} (Expected: ${item.count})</span>
+        <span>Detected: ${item.detected}</span>
+      </div>`;
+    } else {
+      html += `<div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:10px; color:var(--green); margin-bottom:2px">
+        <span>✓ ${item.name} (Expected: ${item.count})</span>
+        <span>Detected: ${item.detected}</span>
+      </div>`;
+    }
+  }
+  
+  expectedList.innerHTML = html;
+  
+  const sid = 'video_inspector';
+  if (missingItems.length > 0) {
+    verdict.textContent = `ORDER INCOMPLETE\nMissing: ${missingItems.join(', ')}`;
+    verdict.style.backgroundColor = 'var(--red-bg)';
+    verdict.style.color = 'var(--red)';
+    setCardState(sid, 'alert');
+    setPill(sid, '✗ MISSING', 'cp-alert');
+  } else {
+    verdict.textContent = `✓ ORDER VERIFIED — ACCURATE`;
+    verdict.style.backgroundColor = 'var(--green-bg)';
+    verdict.style.color = 'var(--green)';
+    setCardState(sid, 'ok');
+    setPill(sid, '✓ OK', 'cp-live');
+  }
+}
+
+// Simple helper to convert name to label in frontend
+function _to_label(name) {
+  const map = {
+    burger:   ["burger", "cheeseburger", "beef burger", "double burger"],
+    fries:    ["fries", "french fries", "chips"],
+    drink:    ["drink", "coke", "soda", "water", "sprite", "beverage"],
+    sandwich: ["sandwich", "chicken sandwich", "fish fillet"],
+    nuggets:  ["nuggets", "chicken nuggets", "tenders"],
+    wrap:     ["wrap", "burrito"],
+    salad:    ["salad", "caesar"],
+    dessert:  ["dessert", "pie", "cookie", "sundae"]
+  };
+  name = name.toLowerCase();
+  for (const label in map) {
+    if (map[label].some(n => name.includes(n))) {
+      return label;
+    }
+  }
+  return null;
+}
+</script>
+</body>
+</html>

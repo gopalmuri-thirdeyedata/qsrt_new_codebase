@@ -1,5 +1,0 @@
-ssh ubuntu@139.99.62.133
-?!ThirdEye25!!?
-sudo -i
-cd /home/qsr/backend_test/
-tail -f nohup.out

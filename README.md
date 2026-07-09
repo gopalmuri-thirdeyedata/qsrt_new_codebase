@@ -1,112 +1,258 @@
-# KitchEye — Food Detection System
+# KitchEye — Automated Food Tray Audit System
 
-A full-stack food item detection system for fast food kitchen quality control.  
-Uses YOLO (Ultralytics) for real-time object detection with GPU acceleration (CUDA / MPS).
+> Real-time food order verification for QSR kitchens.  
+> YOLOv8 object detection + Qubeyond POS integration + WebSocket live streaming.
 
-## Architecture
+---
+
+## What It Does
+
+KitchEye audits every food tray before it leaves the kitchen by:
+
+1. **Watching** physical IP cameras over the restaurant LAN via a local relay agent.
+2. **Detecting** food items on the tray in real-time using a custom-trained YOLOv8 model.
+3. **Verifying** orders against Qubeyond POS data the moment an order is marked complete.
+4. **Alerting** on missing or incorrect items — with an accuracy score and estimated savings.
+
+---
+
+## System Architecture
+
+```mermaid
+flowchart TD
+    subgraph Restaurant ["🏪 Restaurant (On-Site)"]
+        CAM1["📷 IP Camera\nStation 1"]
+        CAM2["📷 IP Camera\nStation 2"]
+        RELAY["local_relay.py\n──────────────\nReads RTSP streams\nCompresses to JPEG\n5 fps per camera"]
+        CAM1 -->|RTSP over LAN| RELAY
+        CAM2 -->|RTSP over LAN| RELAY
+    end
+
+    subgraph Cloud ["☁️ Cloud Server (FastAPI)"]
+        INGEST["WS /ws/stream/{station_id}\n──────────────────────\nReceives JPEG frames\nRuns YOLO detection\nStores latest snapshot"]
+        SNAPSHOT["_snapshots store\n──────────────\nstation_id → detections\nTimestamp per frame"]
+        VIEWER["WS /ws/view/{station_id}\n──────────────────────\nBroadcasts annotated\nframes to browser"]
+        WEBHOOK["POST /webhook/qubeyond/kitchen-event\n────────────────────────────────────\nValidates HMAC signature\nTranslates item names\nCompares order vs camera\nReturns audit result"]
+        UPLOAD["WS /ws/video\n──────────────\nUploads video file\nAnnotates every 5th frame\nSaves processed.mp4"]
+        INGEST -->|"update"| SNAPSHOT
+        INGEST -->|"fan-out"| VIEWER
+        WEBHOOK -->|"read"| SNAPSHOT
+    end
+
+    subgraph Browser ["🖥️ Browser Dashboards"]
+        DASH["demoDashboard.html\n──────────────────\nVideo upload mode\nWebcam live stream"]
+        MON["live_monitor.html\n──────────────────\nMulti-station camera grid\nReal-time detections"]
+        VIEWER -->|"annotated frames"| MON
+        UPLOAD -->|"annotated frames"| DASH
+    end
+
+    subgraph POS ["💳 Qubeyond POS"]
+        QB["Qubeyond Platform\n──────────────────\nORDER_COMPLETE event\nHMAC-signed webhook"]
+        QB -->|"POST webhook"| WEBHOOK
+        WEBHOOK -->|"audit result"| QB
+    end
+
+    RELAY -->|"JPEG binary\nWSS"| INGEST
+```
+
+---
+
+## Project Structure
 
 ```
-kitcheye/
-├── backend/          FastAPI + YOLO + WebSockets
-└── frontend/         React + Recharts UI
+food-detection/
+├── README.md
+├── .gitignore
+│
+├── backend/
+│   ├── main.py                   # FastAPI server — YOLO, WebSockets, REST API
+│   ├── qubeyond_integration.py   # Qubeyond POS webhook + order verification
+│   ├── local_relay.py            # Restaurant camera relay (runs on-site)
+│   ├── requirements.txt          # Python dependencies
+│   ├── model/                    # Subfolder containing all YOLO weights (.pt files)
+│   │   ├── best.pt               # Custom trained YOLOv8 model
+│   │   └── yolov8n.pt            # Fallback YOLOv8 nano model
+│   ├── .env                      # Secrets — Qubeyond API keys, camera URLs
+│   └── .env.example              # Safe template for teammates
+│
+└── frontend/
+    ├── demoDashboard.html         # Operator dashboard — upload + webcam stream
+    └── live_monitor.html          # Kitchen monitor — live multi-station camera grid
 ```
+
+---
 
 ## Quick Start
 
-### 1. Backend
+### Prerequisites
+
+- Python 3.10+
+- A GPU is optional but recommended (CUDA or Apple Silicon MPS)
+
+### 1. Install Dependencies
 
 ```bash
 cd backend
 pip install -r requirements.txt
+```
 
-# Place your trained model here (or yolov8n.pt will be used as fallback):
-cp /path/to/your/yolo_food.pt .
+### 2. Configure Environment
 
+```bash
+# Copy the template
+cp .env.example .env
+
+# Edit .env and fill in your values:
+#   QUBEYOND_API_KEY=...
+#   QUBEYOND_WEBHOOK_SECRET=...
+#   CAM_1=rtsp://admin:password@192.168.1.101:554/stream1
+```
+
+### 3. Start the Server
+
+```bash
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-### 2. Frontend
+Open your browser at `http://localhost:8000`
+
+### 4. Start the Camera Relay (inside the restaurant)
 
 ```bash
-cd frontend
-npm install
-npm start         # Dev server on :3000
-# or
-npm run build     # Production build
-```
-
-### 3. Environment (optional)
-
-Create `frontend/.env`:
-```
-REACT_APP_WS_URL=ws://localhost:8000
+# Run on the local restaurant PC — connects cameras to the cloud server
+python local_relay.py
 ```
 
 ---
 
-## How It Works
+## API Endpoints
 
-### Video Upload Mode
-1. Operator selects a pre-recorded `.mp4` / `.mov` file
-2. File is sent as a single binary WebSocket message to `/ws/video`
-3. Backend processes frame-by-frame using YOLO on GPU
-4. Annotated frames + detection JSON streamed back in real-time
-5. Progress bar shows % complete
+### REST
 
-### Live Stream Mode
-1. Browser accesses webcam via `getUserMedia`
-2. Canvas captures frames at 10 fps → sent as JPEG blobs to `/ws/stream`
-3. Backend runs YOLO on each frame (async, non-blocking)
-4. Annotated frame + detections returned per message
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | Serve operator dashboard (`demoDashboard.html`) |
+| `GET` | `/monitor` | Serve live camera monitor (`live_monitor.html`) |
+| `POST` | `/upload-video` | Upload a video file → returns `video_id` and `temp_path` |
+| `GET` | `/health` | Server status and active compute device |
+| `GET` | `/model-info` | YOLO class names and model settings |
+| `GET` | `/stations` | Latest detections per camera station |
+| `GET` | `/ws/stations` | Active relay connections and viewer counts |
+| `POST` | `/webhook/qubeyond/kitchen-event` | Qubeyond POS order verification webhook |
+| `GET` | `/videos/{video_id}/{filename}` | Download original or processed video |
 
-### GPU Selection
-Backend auto-selects: **CUDA → MPS (Apple Silicon) → CPU**
+### WebSocket
 
----
-
-## UI Views
-
-### Operator Console
-- Mode toggle: Video Upload / Live Stream
-- Real-time annotated video feed
-- Live detection panel with confidence bars
-- Order queue with accuracy scoring (green/yellow/red)
-
-### Analytics Dashboard (Owner)
-- 6 summary KPI cards
-- Accuracy trend chart (weekly / monthly)
-- Order volume bar chart
-- Per-item accuracy horizontal bar
-- Error breakdown by item
+| Endpoint | Direction | Description |
+|----------|-----------|-------------|
+| `WS /ws/video` | ↕ | Upload video → receive annotated frames + progress |
+| `WS /ws/stream` | ↕ | Push webcam JPEG frames → receive detections |
+| `WS /ws/stream/{station_id}` | → | `local_relay.py` pushes camera frames to the server |
+| `WS /ws/view/{station_id}` | ← | Browser subscribes to a live annotated station feed |
 
 ---
 
-## Adding POS Integration
+## Qubeyond Integration
 
-When your POS system is ready:
+### How It Works
 
-1. Expose an endpoint (or message queue) that emits order payloads:
+1. An order is placed through the Qubeyond POS system.
+2. The kitchen prepares the order — cameras watch the tray via `local_relay.py`.
+3. When Qubeyond marks the order `ORDER_COMPLETE`, it sends a signed webhook to:
+   ```
+   POST /webhook/qubeyond/kitchen-event
+   ```
+4. KitchEye reads the most recent camera snapshot for that station.
+5. Expected order items are compared against detected food items.
+6. A verification result is returned to Qubeyond:
+
 ```json
-{ "order_id": "ORD-1001", "items": { "Burger": 2, "Fries": 1 } }
+{
+  "status":      "verified",
+  "order_id":    "ORD-1042",
+  "missing":     ["fries ×1"],
+  "accuracy":    0.833,
+  "savings":     2.99,
+  "intercepted": true
+}
 ```
 
-2. In `backend/main.py`, compare detected items against the order:
+### Setup in Qubeyond Portal
+
+1. Go to **Settings → Integrations → Webhooks → Add Webhook**
+2. Set URL to: `https://your-server.com/webhook/qubeyond/kitchen-event`
+3. Select event: `ORDER_COMPLETE`
+4. Copy the generated **Webhook Secret** into your `.env` file:
+   ```
+   QUBEYOND_WEBHOOK_SECRET=your_secret_here
+   ```
+
+### Extending the Menu Map
+
+Edit `ITEM_NAME_MAP` in `qubeyond_integration.py` to add new food items:
+
 ```python
-def verify_order(expected: dict, detected: list) -> dict:
-    counts = {}
-    for d in detected:
-        counts[d["label"]] = counts.get(d["label"], 0) + 1
-    accuracy = sum(1 for k,v in expected.items() if counts.get(k,0)==v) / len(expected)
-    return {"accuracy": accuracy, "matched": counts}
+ITEM_NAME_MAP = {
+    "burger":   ["Beef Burger", "Double Burger", "Cheeseburger"],
+    "fries":    ["Regular Fries", "Large Fries", "Small Fries"],
+    # Add your new items here:
+    "hotdog":   ["Hot Dog", "Chilli Dog"],
+}
 ```
 
-3. Include verification results in the WebSocket payload.
+> Keys must exactly match your YOLO model's class names.
+
+---
+
+## Hardware & Compute
+
+The server auto-detects the best available compute device at startup:
+
+| Device | Requirement | Performance |
+|--------|-------------|-------------|
+| **CUDA** | NVIDIA GPU + PyTorch CUDA | Fastest (~10ms/frame) |
+| **MPS** | Apple Silicon (M1/M2/M3) | Fast (~15ms/frame) |
+| **CPU** | Any machine | Slower (~80–200ms/frame) |
+
+FP16 (half precision) is automatically enabled on CUDA for ~2× speed.
+
+---
+
+## Camera Relay Configuration
+
+Edit `.env` to configure cameras and the cloud server:
+
+```env
+# Cloud server address (where main.py is running)
+CLOUD_WS_BASE=wss://your-server.com
+
+# IP cameras in the restaurant (RTSP URLs)
+CAM_1=rtsp://admin:password@192.168.1.101:554/stream1
+CAM_2=rtsp://admin:password@192.168.1.102:554/stream1
+CAM_3=rtsp://admin:password@192.168.1.103:554/stream1
+CAM_4=rtsp://admin:password@192.168.1.104:554/stream1
+```
+
+Station IDs (`station_1`, `station_2`, ...) must match what Qubeyond sends
+in the `station_id` field of order webhook events.
 
 ---
 
 ## Detection Classes
 
-Your YOLO model determines available classes. Check them at runtime:
-```
+Your YOLO model (`best.pt`) determines the available food classes.  
+Check them at runtime:
+
+```bash
 GET http://localhost:8000/model-info
+```
+
+Response:
+```json
+{
+  "device":      "cuda",
+  "classes":     {"0": "burger", "1": "fries", "2": "drink"},
+  "num_classes": 3,
+  "infer_size":  640
+}
 ```

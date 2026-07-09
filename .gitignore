@@ -4,3 +4,4 @@ backend/uploads/
 *.pyc
 *.pt
 .DS_Store
+.env

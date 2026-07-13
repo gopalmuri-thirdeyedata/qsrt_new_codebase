@@ -165,6 +165,9 @@ UPLOAD_INFER_SIZE        = 416   # Smaller input → faster inference
 UPLOAD_JPEG_QUALITY      = 55    # Lower quality → smaller WS messages
 UPLOAD_PREVIEW_MAX_EDGE  = 960   # Cap preview image longest edge at 960px
 UPLOAD_CONFIDENCE        = 0.5   # Higher confidence threshold for upload mode
+UPLOAD_READ_MAX_EDGE     = 1280  # Hard cap on frame size entering the pipeline
+                                 # (prevents OOM on 4K/8K source videos — 4K=24MB/frame,
+                                 #  1280p=~3MB/frame, so 8x less memory pressure)
 
 
 # ── Hardware Device Detection ─────────────────────────────────────────────────
@@ -361,7 +364,11 @@ def run_detection(
     # Step 4: Draw bounding boxes and labels on the frame
     annotated = results.plot()
 
-    # Step 5: Scale annotated frame back to original dimensions for correct display
+    # Step 5: Scale annotated frame back to the (capped) source dimensions.
+    # Note: reader() already caps incoming frames to UPLOAD_READ_MAX_EDGE (1280px),
+    # so h_orig/w_orig here is at most 1280px — NOT the raw 4K source size.
+    # Resizing from YOLO's 416px output back to 1280px allocates ~3 MB (safe).
+    # The previous OOM was resizing 416px → raw 4K (24 MB) — that can't happen now.
     h_orig, w_orig = frame_for_detection.shape[:2]
     if annotated.shape[:2] != (h_orig, w_orig):
         annotated = cv2.resize(annotated, (w_orig, h_orig), interpolation=cv2.INTER_LINEAR)
@@ -489,7 +496,20 @@ async def video_ws(websocket: WebSocket):
                     await read_q.put(None)  # Signal end-of-video to detector
                     break
                 if idx % UPLOAD_FRAME_SKIP == 0:
-                    await read_q.put((idx, frame.copy()))
+                    # Cap resolution before queuing to prevent OOM on 4K/8K videos.
+                    # A raw 4K frame is ~24 MB; with queue maxsize=8 that's ~192 MB
+                    # of unprocessed frames in RAM — plus the resize-to-original in
+                    # run_detection doubles the peak. Capping here keeps each frame ≤3 MB.
+                    h, w = frame.shape[:2]
+                    longest = max(h, w)
+                    if longest > UPLOAD_READ_MAX_EDGE:
+                        scale = UPLOAD_READ_MAX_EDGE / longest
+                        frame = cv2.resize(
+                            frame,
+                            (max(1, int(w * scale)), max(1, int(h * scale))),
+                            interpolation=cv2.INTER_AREA,  # INTER_AREA is best for downscaling
+                        )
+                    await read_q.put((idx, frame))
                 idx += 1
 
         # ── Pipeline Task 2: Detector ─────────────────────────────────────────
@@ -552,18 +572,23 @@ async def video_ws(websocket: WebSocket):
                 )
 
                 # Stream frame data + progress metadata to the browser
-                await websocket.send_text(json.dumps({
-                    "frame":               img_b64,
-                    "detections":          detections,
-                    "frame_idx":           f_idx,
-                    "processed_frames":    processed,
-                    "total_frames":        total_frames,
-                    "source_total_frames": source_total_frames,
-                    "fps":                 round(fps, 1),
-                    "processing_fps":      processing_fps,
-                    "infer_ms":            infer_ms,
-                    "elapsed_ms":          elapsed_ms,
-                }))
+                try:
+                    await websocket.send_text(json.dumps({
+                        "frame":               img_b64,
+                        "detections":          detections,
+                        "frame_idx":           f_idx,
+                        "processed_frames":    processed,
+                        "total_frames":        total_frames,
+                        "source_total_frames": source_total_frames,
+                        "fps":                 round(fps, 1),
+                        "processing_fps":      processing_fps,
+                        "infer_ms":            infer_ms,
+                        "elapsed_ms":          elapsed_ms,
+                    }))
+                except (WebSocketDisconnect, RuntimeError):
+                    # Client disconnected while we were about to send — stop the pipeline
+                    log.warning("[%s] client disconnected mid-stream, stopping sender", session_id)
+                    return
 
         # Run all three pipeline tasks concurrently
         await asyncio.gather(reader(), detector(), sender())

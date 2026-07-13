@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -2091,127 +2091,111 @@ function runVideoUploadProcess(file, activeOrder, onCompleteCallback) {
   }
   if (bar) bar.className = 'signal-bar';
 
-  // Read file as ArrayBuffer
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const arrayBuffer = e.target.result;
-    const wsUrl = `${WS_BASE}/ws/video`;
-    uploadSocket = new WebSocket(wsUrl);
+  // ── Upload via HTTP REST, then process via WebSocket ─────────────────────
+  // The OLD approach used FileReader.readAsArrayBuffer() which loads the ENTIRE
+  // video into browser RAM before sending — crashes on 500 MB / 1 GB+ videos.
+  // fetch() + FormData streams file bytes to the server in chunks (no RAM limit).
+  // Server saves to disk, returns the path. WebSocket then sends only that tiny
+  // path string — so the WS connection carries zero video data and stays stable
+  // for the full processing duration, whether the video is 1 min or 60 minutes.
+  const formData = new FormData();
+  formData.append('file', file);
+  const httpBase = window.location.protocol + '//' + window.location.host;
 
-    uploadSocket.onopen = () => {
-      if (badge) badge.textContent = isBatchProcessing ? `UPLOADING (${batchIndex}/${batchQueue.length})` : 'UPLOADING';
-      uploadSocket.send(arrayBuffer);
-    };
+  if (badge) badge.textContent = isBatchProcessing ? `UPLOADING (${batchIndex}/${batchQueue.length})` : 'UPLOADING…';
 
-    uploadSocket.onmessage = (msgEvent) => {
-      try {
-        const msg = JSON.parse(msgEvent.data);
-        if (msg.error) {
-          console.error("YOLO error:", msg.error);
-          return;
+  fetch(`${httpBase}/upload-video`, { method: 'POST', body: formData })
+    .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+    .then(({ temp_path }) => {
+      if (badge) badge.textContent = isBatchProcessing ? `SCANNING BATCH` : 'SCANNING…';
+      const wsUrl = `${WS_BASE}/ws/video`;
+      uploadSocket = new WebSocket(wsUrl);
+
+      uploadSocket.onopen = () => {
+        uploadSocket.send(JSON.stringify({ temp_path }));
+      };
+
+      uploadSocket.onmessage = (msgEvent) => {
+        try {
+          const msg = JSON.parse(msgEvent.data);
+          if (msg.error) { console.error('YOLO error:', msg.error); return; }
+          if (msg.done)  { uploadSocket.close(); return; }
+
+          const frameIdx    = msg.frame_idx;
+          const totalFrames = msg.total_frames;
+          const pct = Math.round((frameIdx / totalFrames) * 100);
+          document.getElementById('vid-progress-bar').style.width = `${pct}%`;
+          document.getElementById('vid-progress-pct').textContent = `${pct}%`;
+          if (badge) badge.textContent = isBatchProcessing ? `SCANNING BATCH (${pct}%)` : `SCANNING (${pct}%)`;
+
+          // Blob URL instead of base64 data: URI — each URL revoked after draw
+          // so the browser never accumulates hundreds of MB of frame data.
+          if (msg.frame) {
+            const byteChars = atob(msg.frame);
+            const byteArr = new Uint8Array(byteChars.length);
+            for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+            const blobUrl = URL.createObjectURL(new Blob([byteArr], { type: 'image/jpeg' }));
+            const img = new Image();
+            img.onload = () => {
+              const cv = document.getElementById('station-canvas');
+              if (cv) { cv.width = img.naturalWidth||640; cv.height = img.naturalHeight||480; cv.getContext('2d').drawImage(img,0,0); }
+              URL.revokeObjectURL(blobUrl);
+            };
+            img.onerror = () => URL.revokeObjectURL(blobUrl);
+            img.src = blobUrl;
+          }
+
+          if (activeOrder) matchLiveVideoDetections(activeOrder, msg.detections || []);
+        } catch (err) { console.error('Failed to parse ws message:', err); }
+      };
+
+      uploadSocket.onerror = (err) => {
+        console.error('WS error:', err);
+        if (badge) { badge.textContent = 'ERROR'; badge.className = 'station-badge sb-bad'; }
+        if (bar) bar.className = 'signal-bar bad';
+      };
+
+      uploadSocket.onclose = () => {
+        document.getElementById('vid-progress-container').style.display = 'none';
+        document.getElementById('video-inspect-file').value = '';
+        document.getElementById('video-batch-files').value = '';
+        const hasMiss = activeOrder.items.some(i => !i.ok);
+        if (badge) { badge.textContent = hasMiss ? '✗ MISMATCH' : '✓ VERIFIED'; badge.className = 'station-badge ' + (hasMiss ? 'sb-bad' : 'sb-ok'); }
+        if (bar) bar.className = 'signal-bar ' + (hasMiss ? 'bad' : 'ok');
+        activeOrder.status = hasMiss ? 'bad' : 'ok';
+        if (hasMiss) {
+          const missingList = activeOrder.items.filter(i => !i.ok).map(i => i.n);
+          if (soundEnabled) speakAlert(missingList);
+          opStats.intercepts++;
+          opStats.saved += missingList.reduce((s, n) => s + (ITEM_PRICES[n] || 3), 0);
         }
-
-        if (msg.done) {
-          uploadSocket.close();
-          return;
-        }
-
-        // We got a frame
-        const frameIdx = msg.frame_idx;
-        const totalFrames = msg.total_frames;
-        const pct = Math.round((frameIdx / totalFrames) * 100);
-
-        document.getElementById('vid-progress-bar').style.width = `${pct}%`;
-        document.getElementById('vid-progress-pct').textContent = `${pct}%`;
-        if (badge) badge.textContent = isBatchProcessing ? `SCANNING BATCH (${pct}%)` : `SCANNING (${pct}%)`;
-
-        // Draw frame to canvas
-        if (msg.frame) {
-          const img = new Image();
-          img.onload = () => {
-            const cv = document.getElementById('station-canvas');
-            if (cv) {
-              cv.width = img.naturalWidth || 640;
-              cv.height = img.naturalHeight || 480;
-              cv.getContext('2d').drawImage(img, 0, 0);
-            }
-          };
-          img.src = `data:image/jpeg;base64,${msg.frame}`;
-        }
-
-        // Real-time comparison matching
-        matchLiveVideoDetections(activeOrder, msg.detections);
-      } catch (err) {
-        console.error("Failed to parse websocket message:", err);
-      }
-    };
-
-    uploadSocket.onerror = (err) => {
-      console.error("WS error:", err);
-      if (badge) {
-        badge.textContent = 'ERROR';
-        badge.className = 'station-badge sb-bad';
-      }
-      if (bar) bar.className = 'signal-bar bad';
-    };
-
-    uploadSocket.onclose = () => {
-      document.getElementById('vid-progress-container').style.display = 'none';
-      document.getElementById('video-inspect-file').value = '';
-      document.getElementById('video-batch-files').value = '';
-
-      // Determine final result from the active order
-      const hasMiss = activeOrder.items.some(i => !i.ok);
-      if (badge) {
-        badge.textContent = hasMiss ? '✗ MISMATCH' : '✓“ VERIFIED';
-        badge.className = 'station-badge ' + (hasMiss ? 'sb-bad' : 'sb-ok');
-      }
-      if (bar) bar.className = 'signal-bar ' + (hasMiss ? 'bad' : 'ok');
-
-      // Update order status in queue
-      activeOrder.status = hasMiss ? 'bad' : 'ok';
-      
-      // Update statistics
-      if (hasMiss) {
-        const missingList = activeOrder.items.filter(i => !i.ok).map(i => i.n);
-        if (soundEnabled) speakAlert(missingList);
-        opStats.intercepts++;
-        opStats.saved += missingList.reduce((s, n) => s + (ITEM_PRICES[n] || 3), 0);
-      }
-      opStats.orders++;
-
-      renderOpStrip();
-      renderQueue();
-
-      // Show result overlay
-      showResult(hasMiss ? 'bad' : 'ok', activeOrder);
-
-      setTimeout(() => {
-        hideResult();
-        if (badge) {
-          badge.textContent = 'IDLE';
-          badge.className = 'station-badge sb-idle';
-        }
-        if (bar) bar.className = 'signal-bar';
-        const footer = document.getElementById('station-footer');
-        if (footer) footer.innerHTML = '<span class="no-det-txt">Awaiting order…</span>';
-        
-        isVideoInspectionActive = false;
-
-        // Reset UI buttons if not batch processing
-        if (!isBatchProcessing) {
-          document.getElementById('vid-cancel-btn').disabled = true;
-          document.getElementById('vid-upload-btn').disabled = false;
-          document.getElementById('vid-batch-btn').disabled = false;
-        }
-
-        // Fire callback to trigger next batch item
-        if (onCompleteCallback) onCompleteCallback();
-      }, 4000);
-    };
-  };
-
-  reader.readAsArrayBuffer(file);
+        opStats.orders++;
+        renderOpStrip(); renderQueue();
+        showResult(hasMiss ? 'bad' : 'ok', activeOrder);
+        setTimeout(() => {
+          hideResult();
+          if (badge) { badge.textContent = 'IDLE'; badge.className = 'station-badge sb-idle'; }
+          if (bar) bar.className = 'signal-bar';
+          const footer = document.getElementById('station-footer');
+          if (footer) footer.innerHTML = '<span class="no-det-txt">Awaiting order…</span>';
+          isVideoInspectionActive = false;
+          if (!isBatchProcessing) {
+            document.getElementById('vid-cancel-btn').disabled = true;
+            document.getElementById('vid-upload-btn').disabled = false;
+            document.getElementById('vid-batch-btn').disabled = false;
+          }
+          if (onCompleteCallback) onCompleteCallback();
+        }, 4000);
+      };
+    })
+    .catch(err => {
+      console.error('Upload error:', err);
+      if (badge) { badge.textContent = 'UPLOAD ERROR'; badge.className = 'station-badge sb-bad'; }
+      isVideoInspectionActive = false;
+      document.getElementById('vid-cancel-btn').disabled = true;
+      document.getElementById('vid-upload-btn').disabled = false;
+      document.getElementById('vid-batch-btn').disabled = false;
+    });
 }
 
 function cancelVideoInspection() {
@@ -2224,6 +2208,7 @@ function cancelVideoInspection() {
 }
 
 function matchLiveVideoDetections(order, detections) {
+  if (!order || !Array.isArray(detections)) return;
   const detectedLabels = detections.map(d => d.label.toLowerCase());
 
   // Mark order items status as ok or missing
